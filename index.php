@@ -4,8 +4,8 @@
 Plugin Name: Woocommerce - Invoices Online Integration
 Plugin URI: http://www.invoicesonline.co.za
 Description: Provides integration between www.invoicesonline.co.za and the woocommerce wordpress plugin. This plugin allows invoices, pro-forma invoices and clients to be created on invoicesonline inside of wordpress. It provides full integration of the invoicesonline system for use with woocommerce.
-Author: Ivoices Online
-Version: 1.6
+Author: Invoices Online
+Version: 1.7
 Author URI: http://www.invoicesonline.co.za/
 */
 
