@@ -9,18 +9,97 @@ Version: 1.6
 Author URI: http://www.invoicesonline.co.za/
 */
 
+// TODO : //
+// Set IO user ID as inlog
+// Set User ID as ou uitcheck en account create word.
+// Wys invoices op account page.
+
 // Include Class File
 include( plugin_dir_path(__FILE__) . 'assets/classes/io-api.class.php');
 
 // Add Actions Hooks
-add_action('woocommerce_checkout_update_order_meta','io_before_checkout');
 add_action('woocommerce_created_customer','io_create_customer');
+add_action('woocommerce_checkout_update_order_meta','io_before_checkout');
+add_action('woocommerce_after_checkout_validation','io_add_io_client');
 add_action('woocommerce_checkout_order_processed','log_order');
 add_filter('woocommerce_payment_successful_result','successfull_payment');
+//add_filter('woocommerce_login_redirect','login_log_details');
+//add_action('woocommerce_before_my_account','login_log_details');
 add_action('woocommerce_after_my_account','vot');
 
 function vot() {
-    echo '<pre>'.print_r($_SESSION,true).'</pre>';
+    session_start();
+    echo '<h2>Invoices</h2>';
+    
+//    echo '<pre>';
+//    print_r(WC()->session);
+//    echo '</pre>';
+    
+    // Create new IO Object
+    $io = new InvoicesOnlineAPI();
+    
+    // Set User API Details
+    $io->username = get_option('io_api_username'); 
+    $io->password = get_option('io_api_password');
+    $io->BusinessID = get_option('io_business_id');
+    
+    $user_ID = get_current_user_id();
+
+    $ioID = get_user_meta($user_ID,'invoices_online_id',true);
+    
+    $document = $io->GetAllDocumentsByType('invoices',$ioID);   
+    
+    echo '<table class="shop_table my_account_orders">
+            <thead>
+                <tr>
+                    <th class="order-number"><span class="nobr">Order</span></th>
+                    <th class="order-date"><span class="nobr">Date</span></th>
+                    <th class="order-total"><span class="nobr">Total</span></th>
+                    <th class="order-actions">&nbsp;</th>
+                </tr>
+            </thead>
+            <tbody>';
+    foreach($document as $doc){
+        foreach($doc as $dc){
+            echo '<tr class="order">
+                    <td class="order-number"><a href="'.$dc['link'].'" target="_blank">'.$dc['invoice_nr'].'</a></td>
+                    <td class="order-date">'.$dc['invoice_date'].'</td>
+                    <td class="order-total"><span class="amount">'.$dc['total'].'</span></td>
+                    <td class="order-actions"><a href="'.$dc['link'].'" target="_blank" class="button view">View</a></td>
+                </tr>';
+        }
+    }
+    
+    echo '</tbody></table>';
+    
+}
+
+function login_log_details() {
+    
+    session_start();
+    $user_ID = get_current_user_id();
+
+    WC()->session->cid = user_ID;
+    WC()->session->iocid = get_user_meta($user_ID,'invoices_online_id',true);
+    
+    $logs .= "Session Vars (".$user_ID.")\n";
+    $logs .= "<pre>".print_r($_SESSION,true)."</pre>\n";
+    $logs .= "<pre>".print_r(WC()->session,true)."</pre>\n";
+    $logs .= "<pre>".get_user_meta($user_ID,'invoices_online_id',true)."</pre>\n";
+    $logs .= "---------------------------------------------------\n\n";
+   
+    io_log_file($logs);
+    
+}
+
+add_action( 'woocommerce_email_order_meta', 'woo_add_order_notes_to_email' );
+
+function woo_add_order_notes_to_email() {
+
+	global $woocommerce, $post;
+
+        echo '<h2 style="color:#505050; display:block; font-family:Arial; font-size:30px; font-weight:bold; margin-top:10px; margin-right:0; margin-bottom:10px; margin-left:0; text-align:left; line-height:150%">Invoicee</h2>';
+	echo 'Click here to view your Invoice : <a href="'.WC()->session->ioinvoiceurl.'"> View Invoice</a>';
 }
 
 function log_order($order) {
@@ -53,11 +132,14 @@ function successfull_payment($text) {
     $proFormaInvNr = WC()->session->ioOrder;
     $clientID = WC()->session->ioclientid;
     
-    $createInvoice = $io->ConvertProformaToInvoice(get_option('io_business_id'), $proFormaInvNr);
+    $createInvoice = $io->ConvertProformaToInvoice(get_option('io_business_id'), $proFormaInvNr);   
+    $createInvoice = json_decode($createInvoice);
+    
+    WC()->session->ioinvoiceurl = $createInvoice[2]->url;
     
     if($logging['errors'] == 'on'){
         $logs .= "Create New Invoice from Pro-Forma Invoice\n";
-        $logs .= $createInvoice."\n";
+        $logs .= $createInvoice[2]->url."\n";
         $logs .= "---------------------------------------------------\n\n";
     }
     
@@ -72,12 +154,12 @@ function successfull_payment($text) {
         $logs .= "---------------------------------------------------\n\n";
     }
     
-    io_log_file($logs);
-    
     return $text;
 }
 
 function io_create_customer($data) {
+    
+    session_start();
     
     // Get Logging Settings
     $logging = get_option('ioLogging');
@@ -90,39 +172,38 @@ function io_create_customer($data) {
     $io->password = get_option('io_api_password');
     $io->BusinessID = get_option('io_business_id');
     
-    $pdata .= '<pre>';
-    $pdata .= print_r($_REQUEST,true);
-    $pdata .= '</pre>';
-    $pdata .= 'Customer ID = '.$data;
+    $pdata .= "updatemeta\n";
+    $pdata .= "Customer ID = ".$data." - ".$_SESSION['new_customer_id']."\n";
     
-    // Lets set the client parameters
-    $ClientParams['client_invoice_name'] = '';
-    $ClientParams['client_phone_nr'] = '';
-    $ClientParams['client_phone_nr2'] = '';
-    $ClientParams['client_mobile_nr'] = '';
-    $ClientParams['client_email'] = $_REQUEST['email'];
-    $ClientParams['client_vat_nr'] = '';
-    $ClientParams['client_fax_nr'] = '';
-    $ClientParams['contact_name'] = '';
-    $ClientParams['contact_surname'] = '';
-    $ClientParams['client_postal_address1'] = '';
-    $ClientParams['client_postal_address2'] = '';
-    $ClientParams['client_postal_address3'] = '';
-    $ClientParams['client_postal_address4'] = '';
-    $ClientParams['client_physical_address1'] = '';
-    $ClientParams['client_physical_address2'] = '';
-    $ClientParams['client_physical_address3'] = '';
-    $ClientParams['client_physical_address4'] = '';
+    $pdata .= "Session before update o\n";
+    $pdata .= "<pre>".print_r($_SESSION,true)."</pre>\n";
+    $pdata .= "---------------------------------------------------\n\n";
+//    
     
-    // Create the client and get new Client Id
-    $ClientID = $io->CreateNewClient($ClientParams);
+    $addioid = update_user_meta($data, 'invoices_online_id', $_SESSION['new_customer_id']);
     
-    update_user_meta($data, 'invoices_online_id', $ClientID);
+     $pdata .= "Session after update o\n";
+    $pdata .= "<pre>".print_r($_SESSION,true)."</pre>\n";
+    $pdata .= "---------------------------------------------------\n\n";
+    
+    if($addioid == true){
+        $pdata .= "--- updatemeta\n";
+    } else {
+        $pdata .= "--- didnt updatemeta\n";
+    }
     
     io_log_file($pdata);
+    
 }
 
-function io_before_checkout($order_id) {
+function io_add_io_client() {
+    session_start();
+    
+    unset($_SESSION['new_customer_id']);
+    
+    $logs .= "Session before o\n";
+    $logs .= "<pre>".print_r($_SESSION,true)."</pre>\n";
+    $logs .= "---------------------------------------------------\n\n";
     
     // Get Logging Settings
     $logging = get_option('ioLogging');
@@ -169,11 +250,42 @@ function io_before_checkout($order_id) {
     // Create the client and get new Client Id
     $ClientID = $io->CreateNewClient($ClientParams);
     
-    if($logging['errors'] == 'on'){
-        $logs .= "Create New Client\n";
-        $logs .= $ClientID."\n";
+    // Set the IO new custmomer Id for use.
+    //WC()->session->new_customer_id = $ClientID;
+    
+    $logs .= "Session after add o\n";
+    $logs .= "<pre>".print_r($_SESSION,true)."</pre>\n";
+    $logs .= "---------------------------------------------------\n\n";
+//    
+    $_SESSION['new_customer_id'] = $ClientID;
+    
+    $logs .= "Session after set o\n";
+    $logs .= "<pre>".print_r($_SESSION,true)."</pre>\n";
+    $logs .= "---------------------------------------------------\n\n";
+    
+    io_log_file($logs);
+
+}
+
+function io_before_checkout($order_id) {
+    
+    session_start();
+    
+    // Get Logging Settings
+    $logging = get_option('ioLogging');
+    
+    if($logging['errors'] == ''){
+        $logs .= "Error logging disabled\n";
         $logs .= "---------------------------------------------------\n\n";
     }
+    
+    // Create new IO Object
+    $io = new InvoicesOnlineAPI();
+    
+    // Set User API Details
+    $io->username = get_option('io_api_username'); 
+    $io->password = get_option('io_api_password');
+    $io->BusinessID = get_option('io_business_id');
     
     // Prepare data for submission to IO
     // I am using the WC object already called in the function the action ( hook ) is used
@@ -201,9 +313,9 @@ function io_before_checkout($order_id) {
     
     WC()->session->iolines = $lines;
     WC()->session->iocarttotal = WC()->cart->total;
-    WC()->session->ioclientid = $ClientID;
+    WC()->session->ioclientid = $_SESSION['new_customer_id'];
     
-    $addproforma = $io->CreateNewProformaInvoice($io->BusinessID, $ClientID, $OrderNR, $lines);
+    $addproforma = $io->CreateNewProformaInvoice($io->BusinessID, $_SESSION['new_customer_id'], $OrderNR, $lines);
     
     if($logging['errors'] == 'on'){
         $logs .= "Create New Proforma Invoice\n";
@@ -234,9 +346,6 @@ function io_log_file($data) {
     };
     
 }
-
-
-
 
 /***********************************************/
 /*              PLUGIN OPTIONS                 */
