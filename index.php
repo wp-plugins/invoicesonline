@@ -1,52 +1,44 @@
 <?php
-
 /*
 Plugin Name: Woocommerce - Invoices Online Integration
 Plugin URI: http://www.invoicesonline.co.za
 Description: Provides integration between www.invoicesonline.co.za and the woocommerce wordpress plugin. This plugin allows invoices, pro-forma invoices and clients to be created on invoicesonline inside of wordpress. It provides full integration of the invoicesonline system for use with woocommerce.
 Author: Invoices Online
-Version: 1.7
+Version: 1.8
 Author URI: http://www.invoicesonline.co.za/
 */
 
-// TODO : //
-// Set IO user ID as inlog
-// Set User ID as ou uitcheck en account create word.
-// Wys invoices op account page.
-
-// Include Class File
 include( plugin_dir_path(__FILE__) . 'assets/classes/io-api.class.php');
 
-// Add Actions Hooks
+function myplugin_activate() {
+    $file = WP_PLUGIN_DIR."/woo-io/assets/logs/logs.txt";
+    if(!file_exists($file)) 
+    { 
+       $fp = fopen($file,"w");  
+       fwrite($fp,"0");  
+       fclose($fp); 
+    }  
+}
+register_activation_hook( __FILE__, 'myplugin_activate' );
+
 add_action('woocommerce_created_customer','io_create_customer');
 add_action('woocommerce_checkout_update_order_meta','io_before_checkout');
 add_action('woocommerce_after_checkout_validation','io_add_io_client');
 add_action('woocommerce_checkout_order_processed','log_order');
 add_filter('woocommerce_payment_successful_result','successfull_payment');
-//add_filter('woocommerce_login_redirect','login_log_details');
-//add_action('woocommerce_before_my_account','login_log_details');
 add_action('woocommerce_after_my_account','vot');
 
 function vot() {
     session_start();
     echo '<h2>Invoices</h2>';
     
-//    echo '<pre>';
-//    print_r(WC()->session);
-//    echo '</pre>';
-    
-    // Create new IO Object
     $io = new InvoicesOnlineAPI();
-    
-    // Set User API Details
     $io->username = get_option('io_api_username'); 
     $io->password = get_option('io_api_password');
     $io->BusinessID = get_option('io_business_id');
     
     $user_ID = get_current_user_id();
-
     $ioID = get_user_meta($user_ID,'invoices_online_id',true);
-    
     $document = $io->GetAllDocumentsByType('invoices',$ioID);   
     
     echo '<table class="shop_table my_account_orders">
@@ -70,8 +62,7 @@ function vot() {
         }
     }
     
-    echo '</tbody></table>';
-    
+    echo '</tbody></table>';  
 }
 
 function login_log_details() {
@@ -104,28 +95,18 @@ function woo_add_order_notes_to_email() {
 
 function log_order($order) {
     
-    // Get Logging Settings
-    $logging = get_option('ioLogging');
-    
-    
     $order_io_inv = get_post_meta($order,'io_proforma_invoice',true);
     
-    // Moet die order nommer deur stuur sodat ek die pro-forma kan convert na invoice.
     WC()->session->ioOrder = $order_io_inv;
     
-    //$pdata .= date('Y-m-d').' - Orderlogger '.$order.' : '.$order_io_inv.'<br/>';
-    //io_log_file($pdata);
 }
 
 function successfull_payment($text) {
-    
-    // Get Logging Settings
+
     $logging = get_option('ioLogging');
-    
-    // Create new IO Object
+
     $io = new InvoicesOnlineAPI();
-    
-    // Set User API Details
+
     $io->username = get_option('io_api_username'); 
     $io->password = get_option('io_api_password');
     $io->BusinessID = get_option('io_business_id');
@@ -161,13 +142,10 @@ function io_create_customer($data) {
     
     session_start();
     
-    // Get Logging Settings
     $logging = get_option('ioLogging');
-    
-    // Create new IO Object
+
     $io = new InvoicesOnlineAPI();
-    
-    // Set User API Details
+
     $io->username = get_option('io_api_username'); 
     $io->password = get_option('io_api_password');
     $io->BusinessID = get_option('io_business_id');
@@ -177,8 +155,7 @@ function io_create_customer($data) {
     
     $pdata .= "Session before update o\n";
     $pdata .= "<pre>".print_r($_SESSION,true)."</pre>\n";
-    $pdata .= "---------------------------------------------------\n\n";
-//    
+    $pdata .= "---------------------------------------------------\n\n";   
     
     $addioid = update_user_meta($data, 'invoices_online_id', $_SESSION['new_customer_id']);
     
@@ -204,27 +181,22 @@ function io_add_io_client() {
     $logs .= "Session before o\n";
     $logs .= "<pre>".print_r($_SESSION,true)."</pre>\n";
     $logs .= "---------------------------------------------------\n\n";
-    
-    // Get Logging Settings
+
     $logging = get_option('ioLogging');
     
     if($logging['errors'] == ''){
         $logs .= "Error logging disabled\n";
         $logs .= "---------------------------------------------------\n\n";
     }
-    
-    // Create new IO Object
+
     $io = new InvoicesOnlineAPI();
-    
-    // Set User API Details
+
     $io->username = get_option('io_api_username'); 
     $io->password = get_option('io_api_password');
     $io->BusinessID = get_option('io_business_id');
     
     $cinfo = $_REQUEST;
-    
-    // Create the client first
-    // Lets set the client parameters
+
     if($cinfo['billing_company'] == ''){
         $ClientParams['client_invoice_name'] = $cinfo['billing_first_name'].' '.$cinfo['billing_last_name'];
     } else {
@@ -246,17 +218,13 @@ function io_add_io_client() {
     $ClientParams['client_physical_address2'] = $cinfo['shipping_address_2'];
     $ClientParams['client_physical_address3'] = $cinfo['shipping_city'].', '.$cinfo['shipping_state'];
     $ClientParams['client_physical_address4'] = $cinfo['shipping_postcode'];
-    
-    // Create the client and get new Client Id
+
     $ClientID = $io->CreateNewClient($ClientParams);
-    
-    // Set the IO new custmomer Id for use.
-    //WC()->session->new_customer_id = $ClientID;
     
     $logs .= "Session after add o\n";
     $logs .= "<pre>".print_r($_SESSION,true)."</pre>\n";
     $logs .= "---------------------------------------------------\n\n";
-//    
+  
     $_SESSION['new_customer_id'] = $ClientID;
     
     $logs .= "Session after set o\n";
@@ -270,31 +238,24 @@ function io_add_io_client() {
 function io_before_checkout($order_id) {
     
     session_start();
-    
-    // Get Logging Settings
+
     $logging = get_option('ioLogging');
     
     if($logging['errors'] == ''){
         $logs .= "Error logging disabled\n";
         $logs .= "---------------------------------------------------\n\n";
     }
-    
-    // Create new IO Object
+
     $io = new InvoicesOnlineAPI();
-    
-    // Set User API Details
+
     $io->username = get_option('io_api_username'); 
     $io->password = get_option('io_api_password');
     $io->BusinessID = get_option('io_business_id');
-    
-    // Prepare data for submission to IO
-    // I am using the WC object already called in the function the action ( hook ) is used
+
     $woocart = WC()->cart->get_cart();
-    
-    // Set empty array
+
     $lines = array();
-    
-    // Iterate through the cart items and add them to the array.
+
     foreach($woocart as $item){
         $lines[] = array (
             $item['product_id'],
@@ -331,41 +292,29 @@ function io_before_checkout($order_id) {
 }
 
 function io_log_file($data) {
-    //$file = 'test.xml';
+
     $file = WP_PLUGIN_DIR."/woo-io/assets/logs/logs.txt";
-    // Open the file to get existing content
+
     $current = file_get_contents($file);
-    // Append a new person to the file
+
     $current .= $data."\n";
-    // Write the contents back to the file
+
     $write = file_put_contents($file, $current);
-    if($write){
-        //echo 'written'.$write;
-    } else {
-        //echo 'not written'.$write;
-    };
     
 }
 
-/***********************************************/
-/*              PLUGIN OPTIONS                 */
-/***********************************************/
-
-// create custom plugin settings menu
 add_action('admin_menu', 'io_create_menu');
 
 function io_create_menu() {
 
-	//create new top-level menu
 	add_menu_page('Invoices Online Plugin Settings', 'Invoices Online', 'administrator', __FILE__, 'io_settings_page',plugins_url('/assets/images/favicon-16x16.png', __FILE__));
 
-	//call register settings function
 	add_action( 'admin_init', 'register_io_settings' );
 }
 
 
 function register_io_settings() {
-	//register our settings
+
 	register_setting( 'io-settings-group', 'io_api_username' );
 	register_setting( 'io-settings-group', 'io_api_password' );
 	register_setting( 'io-settings-group', 'io_business_id' );
@@ -384,7 +333,6 @@ function io_settings_page() {
         <li class="io-tab active" id="io-settings"><a href="#">Settings</a> | </li><li class="io-tab" id="io-reporting"><a href="#">Reporting | </a></li><li class="io-tab" id="io-faq"><a href="#">Support & FAQ</a></li>
     </ul>
     <div class="io-tab-holder active" id="io-settings-tab">
-        <!--<table class="io-table-form">-->
         <table class="wp-list-table widefat plugins">
             <tr>
                 <td colspan="3">
@@ -422,7 +370,6 @@ function io_settings_page() {
                     <textarea id="io-error-log" cols="80" rows="20">
                     <?php
                         $file = WP_PLUGIN_DIR."/woo-io/assets/logs/logs.txt";
-                        // Open the file to get existing content
                         $current = file_get_contents($file);
                         echo $current;
                     ?>
@@ -455,14 +402,12 @@ function io_settings_page() {
 </div>
 <?php }
 
-add_action( 'admin_head', 'io_head' ); // Write our JS below here
+add_action( 'admin_head', 'io_head' );
 
 function io_head() { ?>
     <style type="text/css">
         .io-tab-menu {
-/*            padding-bottom:0px;
-            margin-bottom:0px;
-            margin-top: 35px;*/
+
         }
         
         .subsubsub span {
@@ -480,31 +425,6 @@ function io_head() { ?>
         .io-tab-holder.active {
             display:block;
         }
-        
-/*        .io-tab:first-child {
-            border-top-left-radius:5px;
-            -o-border-top-left-radius:5px;
-            -moz-border-top-left-radius:5px;
-            -webkit-border-top-left-radius:5px;
-        }
-        
-        .io-tab:last-child {
-            border-top-right-radius:5px;
-            -o-border-top-right-radius:5px;
-            -moz-border-top-right-radius:5px;
-            -webkit-border-top-right-radius:5px;
-        }
-        
-        .io-tab {
-            background: url(<?php echo plugins_url('/assets/images/iotabbg.jpg', __FILE__); ?>) repeat-x;
-            display: inline-block;
-            padding: 11px;
-            color: #ffffff;
-            margin:0px;
-            cursor:pointer;
-            border-left:#89c2fc 1px solid;
-            border-right:#418fdd 1px solid;
-        }*/
         
         .io-tab.active {
             color:#000000;
@@ -524,7 +444,7 @@ function io_head() { ?>
     </style>
     <?php
 }
-add_action( 'admin_footer', 'io_javascript' ); // Write our JS below here
+add_action( 'admin_footer', 'io_javascript' );
 
 function io_javascript() { ?>
 	<script type="text/javascript" >
@@ -542,7 +462,6 @@ function io_javascript() { ?>
 			'action': 'clear_error_log'
 		};
 
-		// since 2.8 ajaxurl is always defined in the admin header and points to admin-ajax.php
 		$.post(ajaxurl, data, function(response) {
 			alert('Cleared');
                         $('#io-error-log').html('');
@@ -554,7 +473,6 @@ function io_javascript() { ?>
 			'action': 'refresh_error_log'
 		};
 
-		// since 2.8 ajaxurl is always defined in the admin header and points to admin-ajax.php
 		$.post(ajaxurl, data, function(response) {
 			$('#io-error-log').html(response);
 		}); 
@@ -562,7 +480,6 @@ function io_javascript() { ?>
             
             $('.subsubsub li a').click(function(event){
                 event.preventDefault();
-                //do whatever
             });
 	});
 	</script> <?php
@@ -574,27 +491,18 @@ add_action( 'wp_ajax_refresh_error_log', 'refresh_error_log' );
 function clear_error_log() {
     
 	$file = WP_PLUGIN_DIR."/woo-io/assets/logs/logs.txt";
-        // Open the file to get existing content
         $current = file_get_contents($file);
-        // Append a new person to the file
         $current = "";
-        // Write the contents back to the file
-        file_put_contents($file, $current);
-        
-	die(); // this is required to terminate immediately and return a proper response
+        file_put_contents($file, $current);       
+	die();
 }
 
 function refresh_error_log() {
-    
-        // Open the file to get existing content
+
         $file = WP_PLUGIN_DIR."/woo-io/assets/logs/logs.txt";
-        
-        // Open the file to get existing content
-        $current = file_get_contents($file);
-        
-        echo $current;
-        
-	die(); // this is required to terminate immediately and return a proper response
+        $current = file_get_contents($file);        
+        echo $current;       
+	die();
 }
 
 ?>
