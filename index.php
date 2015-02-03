@@ -240,6 +240,8 @@ function io_before_checkout($order_id) {
     session_start();
 
     $logging = get_option('ioLogging');
+    $vatapplies = get_option('vatapplies');
+    $amountsincludevat = get_option('amountsincludevat');
     
     if($logging['errors'] == ''){
         $logs .= "Error logging disabled\n";
@@ -253,21 +255,35 @@ function io_before_checkout($order_id) {
     $io->BusinessID = get_option('io_business_id');
 
     $woocart = WC()->cart->get_cart();
+    $wctax = new WC_Tax();
+    $wctavr = $wctax->get_rates();
 
     $lines = array();
 
     foreach($woocart as $item){
-        $lines[] = array (
-            $item['product_id'],
-            $item['quantity'],
-            $item['data']->post->post_title,
-            $item['line_total'],
-            'ZAR',
-            1,
-            '14.00',
-            0,
-            $_REQUEST['order_comments']
-        );
+        $product_info = wc_get_product($item['product_id']);
+        
+        $lines[0] = $item['product_id'];
+        $lines[1] = $item['quantity'];
+        $lines[2] = $item['data']->post->post_title;
+        $lines[3] = $item['line_total'];
+        $lines[4] = 'ZAR';
+        if($amountsincludevat == 'yes'){
+            $lines[5] = 1;
+        } else {
+            $lines[5] = 0;
+        };
+        if(empty($wctavr)){
+            $lines[6] = '0';
+        } else {
+            $lines[6] = $wctavr[1]['rate'];
+        } 
+        if($vatapplies == 'yes'){
+            $lines[7] = 1;
+        } else {
+            $lines[7] = 0;
+        }
+        $lines[8] = $_REQUEST['order_comments'];
     }
     
     $OrderNR = 0;
@@ -319,6 +335,8 @@ function register_io_settings() {
 	register_setting( 'io-settings-group', 'io_api_password' );
 	register_setting( 'io-settings-group', 'io_business_id' );
 	register_setting( 'io-settings-group', 'ioLogging' );
+        register_setting( 'io-settings-group', 'vatapplies' );
+	register_setting( 'io-settings-group', 'amountsincludevat' );
 }
 
 function io_settings_page() {
@@ -359,6 +377,42 @@ function io_settings_page() {
                 <td>
                     <?php $logging = get_option('ioLogging'); ?>
                     Errors: <input type="checkbox" name="ioLogging[errors]" <?php echo ($logging['errors'] == 'on' ? 'checked="checked"' : '' ); ?> style="margin-right:10px"/>
+                </td>
+            </tr>
+            <tr valign="top">
+                <th scope="row">Woocommerce Prices Include VAT?</th>
+                <td>
+                    <?php $vatapplies = get_option('vatapplies'); ?>
+                    <select name="vatapplies">
+                        <?php 
+                        $arr = array('yes','no');
+                        foreach($arr as $ar){
+                            if($vatapplies == $ar){
+                                echo '<option value="'.$ar.'" selected="selected">'.$ar.'</option>';
+                            } else {
+                                echo '<option value="'.$ar.'">'.$ar.'</option>';
+                            }
+                        }
+                        ?>
+                    </select>
+                </td>
+            </tr>
+            <tr valign="top">
+                <th scope="row">Must Invoices Online Apply vat to prices?</th>
+                <td>
+                    <?php $amountsincludevat = get_option('amountsincludevat'); ?>
+                    <select name="amountsincludevat">
+                        <?php 
+                        $arr2 = array('yes','no');
+                        foreach($arr2 as $ar2){
+                            if($amountsincludevat == $ar2){
+                                echo '<option value="'.$ar2.'" selected="selected">'.$ar2.'</option>';
+                            } else {
+                                echo '<option value="'.$ar2.'">'.$ar2.'</option>';
+                            }
+                        }
+                        ?>
+                    </select>
                 </td>
             </tr>
         </table>
@@ -503,6 +557,28 @@ function refresh_error_log() {
         $current = file_get_contents($file);        
         echo $current;       
 	die();
+}
+
+add_action('admin_notices', 'io_admin_notice');
+
+function io_admin_notice() {
+	global $current_user ;
+        $user_id = $current_user->ID;
+	if ( ! get_user_meta($user_id, 'io_ignore_notice') ) {
+        echo '<div class="error"><p>'; 
+        printf(__('Please set your tax settings in the Invoices Online Settings page | <a href="%1$s">Hide Notice</a>'), '?io_nag_ignore=0');
+        echo "</p></div>";
+	}
+}
+
+add_action('admin_init', 'io_nag_ignore');
+
+function io_nag_ignore() {
+	global $current_user;
+        $user_id = $current_user->ID;
+        if ( isset($_GET['io_nag_ignore']) && '0' == $_GET['io_nag_ignore'] ) {
+             add_user_meta($user_id, 'io_ignore_notice', 'true', true);
+	}
 }
 
 ?>
